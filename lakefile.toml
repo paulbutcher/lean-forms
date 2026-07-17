@@ -1,37 +1,10 @@
-name = "webapp"
+name = "forms"
 version = "0.1.0"
-defaultTargets = ["webapp", "Forms", "Todo"]
-testDriver = "TodoTests"
-
-[[require]]
-name = "leansqlite"
-git = "https://github.com/leanprover/leansqlite"
-rev = "v4.31.0"
-
-[[require]]
-name = "html"
-git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.1.1"
-
-[[require]]
-name = "htmx"
-git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.1.0"
-
-[[require]]
-name = "routing"
-git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.1.0"
+defaultTargets = ["Forms"]
+testDriver = "FormsTests"
 
 [[lean_lib]]
 name = "Forms"
 
 [[lean_lib]]
-name = "Todo"
-
-[[lean_lib]]
-name = "TodoTests"
-
-[[lean_exe]]
-name = "webapp"
-root = "Main"
+name = "FormsTests"
