@@ -1,18 +1,25 @@
 import Forms.FormBody
 
+open Std Async
+open Std Http
+
 namespace Forms
 
--- #guard tests: empty body, single/multiple pairs, `+`-as-space, `%XX` decoding (including
--- decoding a literal `%` via `%25`), a valueless flag, an empty value, and tolerant handling of a
--- malformed/trailing `%` escape.
-#guard parseFormBody "" = []
-#guard parseFormBody "title=Buy+milk" = [("title", "Buy milk")]
-#guard parseFormBody "a=1&b=2" = [("a", "1"), ("b", "2")]
-#guard parseFormBody "title=Buy%20milk" = [("title", "Buy milk")]
-#guard parseFormBody "a=100%25" = [("a", "100%")]
-#guard parseFormBody "flag" = [("flag", "")]
-#guard parseFormBody "empty=&x=1" = [("empty", ""), ("x", "1")]
-#guard parseFormBody "a=b%" = [("a", "b%")]
-#guard parseFormBody "a=b%zz" = [("a", "b%zz")]
+private def checkParseForm (body : String) (expected : List (String × String)) : IO Unit := do
+  let got ← Async.block do
+    let stream ← Body.fromBytes body.toUTF8
+    parseForm stream
+  unless got = expected do
+    throw <| IO.userError s!"parseForm {body.quote}: expected {expected}, got {got}"
+
+#eval checkParseForm "" []
+#eval checkParseForm "title=Buy+milk" [("title", "Buy milk")]
+#eval checkParseForm "a=1&b=2" [("a", "1"), ("b", "2")]
+#eval checkParseForm "title=Buy%20milk" [("title", "Buy milk")]
+#eval checkParseForm "a=100%25" [("a", "100%")]
+#eval checkParseForm "flag" [("flag", "")]
+#eval checkParseForm "empty=&x=1" [("empty", ""), ("x", "1")]
+#eval checkParseForm "a=b%" []
+#eval checkParseForm "a=b%zz" []
 
 end Forms

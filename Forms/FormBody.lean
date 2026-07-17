@@ -2,21 +2,7 @@ import Std.Http.Server
 
 /-!
 Decoding an `application/x-www-form-urlencoded` request body (`title=Buy+milk`) into
-`(name, value)` pairs, and reading that body straight off an incoming request.
-
-Hand-rolled structural recursion over `List Char`, deliberately not `String.splitOn` -- the same
-choice `Routing/Pattern.lean` made for pattern strings, for the same reason: this toolchain's
-`String.splitOn` doesn't play well with the kind of char-by-char processing percent-decoding also
-needs (turning `%XX` into a single decoded character as it goes), so one uniform `List Char`
-recursion handles splitting *and* decoding rather than mixing `String.splitOn` with a separate
-decode pass.
-
-This module only exists because `Routing/Server.lean` threads the full `Request Body.Stream` into
-every handler (`Result := Request Body.Stream → ContextAsync (Response Body.Any)`) -- once a
-handler can call `request.body.readAll (α := String)` to get the raw body, something has to turn
-that into `(name, value)` pairs, and `Std.Http.URI`'s query-string types aren't a fit (see
-`docs/todo-app-plan.md`: `URI.EncodedQueryString`'s constructor is `private` with a validity proof
-obligation, built for parsing URIs, not for reinterpreting an arbitrary body string).
+`(name, value)` pairs.
 -/
 
 namespace Forms
@@ -34,24 +20,25 @@ private def hexDigit (c : Char) : Option Nat :=
 
 /-- Percent-decodes a `List Char`, accumulating the (reversed) decoded output in `acc`: `+`
 becomes a space, `%XX` becomes the single character with that codepoint, and a `%` not followed by
-two valid hex digits (including one at the very end of the input) is passed through literally
-rather than failing the whole decode -- form bodies in the wild are usually decoded tolerantly,
-and this is a demo app's input path, not a place to panic on a stray `%`. -/
-private def decodeCharsAux : List Char → List Char → List Char
-  | acc, [] => acc.reverse
+two valid hex digits (including one at the very end of the input) fails the whole decode -- a
+compliant sender always percent-encodes a literal `%` as `%25`, so a stray `%` here means the body
+didn't come from a compliant form submission. -/
+private def decodeCharsAux : List Char → List Char → Option (List Char)
+  | acc, [] => some acc.reverse
   | acc, '+' :: rest => decodeCharsAux (' ' :: acc) rest
   | acc, '%' :: d1 :: d2 :: rest =>
     match hexDigit d1, hexDigit d2 with
     | some h1, some h2 => decodeCharsAux (Char.ofNat (h1 * 16 + h2) :: acc) rest
-    | _, _ => decodeCharsAux ('%' :: acc) (d1 :: d2 :: rest)
+    | _, _ => none
+  | _, '%' :: _ => none
   | acc, c :: rest => decodeCharsAux (c :: acc) rest
 
-/-- Percent-decodes one form-urlencoded component (a key or a value). -/
-def decodeComponent (s : String) : String :=
-  String.ofList (decodeCharsAux [] s.toList)
+/-- Percent-decodes one form-urlencoded component (a key or a value), or `none` if it contains
+malformed percent-encoding. -/
+def decodeComponent (s : String) : Option String :=
+  (decodeCharsAux [] s.toList).map String.ofList
 
-/-- Splits a `List Char` on `'&'`, mirroring `Pattern.lean`'s `splitChars` (which does the same
-job for `'/'`). -/
+/-- Splits a `List Char` on `'&'`. -/
 private def splitAmp : List Char → List (List Char)
   | [] => [[]]
   | c :: rest =>
@@ -62,8 +49,7 @@ private def splitAmp : List Char → List (List Char)
       | seg :: segs => (c :: seg) :: segs
 
 /-- Splits a `List Char` on the first `'='`. A pair with no `'='` at all (a bare flag, e.g.
-`"checked"`) is treated as that key with an empty value -- unlike `Pattern.lean`'s
-`splitOnceColon`, this never fails: forms legitimately send valueless keys. -/
+`"checked"`) is treated as that key with an empty value: forms legitimately send valueless keys. -/
 private def splitOnceEquals : List Char → List Char × List Char
   | [] => ([], [])
   | '=' :: rest => ([], rest)
@@ -72,19 +58,18 @@ private def splitOnceEquals : List Char → List Char × List Char
     (c :: k, v)
 
 /-- Decodes an `application/x-www-form-urlencoded` body into `(name, value)` pairs, in the order
-they appeared. A completely empty body (or a stray `&` producing an empty segment) contributes no
-pairs, rather than an empty-string key. -/
-def parseFormBody (body : String) : List (String × String) :=
-  (splitAmp body.toList).filterMap fun cs =>
-    if cs.isEmpty then none
-    else
-      let (k, v) := splitOnceEquals cs
-      some (decodeComponent (String.ofList k), decodeComponent (String.ofList v))
+they appeared, or `none` if any component contains malformed percent-encoding. A completely empty
+body (or a stray `&` producing an empty segment) contributes no pairs, rather than an empty-string
+key. -/
+def parseFormBody (body : String) : Option (List (String × String)) :=
+  ((splitAmp body.toList).filter (·.isEmpty = false)).mapM fun cs =>
+    let (k, v) := splitOnceEquals cs
+    return (← decodeComponent (String.ofList k), ← decodeComponent (String.ofList v))
 
-/-- Reads and decodes a `application/x-www-form-urlencoded` request body, returning the value of
-`name`, or `""` if the body has no such field. -/
-def formField (req : Request Body.Stream) (name : String) : Async String := do
-  let body ← req.body.readAll (α := String)
-  return ((parseFormBody body).lookup name).getD ""
+/-- Reads and decodes an `application/x-www-form-urlencoded` request body from `stream` into
+`(name, value)` pairs, or `[]` if the body is ill-formed. -/
+def parseForm (stream : Body.Stream) : Async (List (String × String)) := do
+  let body ← stream.readAll (α := String)
+  return (parseFormBody body).getD []
 
 end Forms
