@@ -3,6 +3,8 @@
 A Lean 4 library for decoding `application/x-www-form-urlencoded` HTML form
 submissions (e.g. `title=Buy+milk&done=false`) into `(name, value)` pairs.
 
+See: [Formally verified CRUD](https://paulbutcher.com/lean2.html).
+
 ## Installation
 
 Add this to your `lakefile.toml`:
