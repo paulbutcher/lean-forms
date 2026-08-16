@@ -5,6 +5,8 @@ submissions (e.g. `title=Buy+milk&done=false`) into `(name, value)` pairs.
 
 See: [Formally verified CRUD](https://paulbutcher.com/lean2.html).
 
+**Deprecated: use [lean-middleware](https://github.com/paulbutcher/lean-middleware) instead.**
+
 ## Installation
 
 Add this to your `lakefile.toml`:
